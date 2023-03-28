@@ -3,7 +3,6 @@ package server;
 import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
-import java.rmi.server.UnicastRemoteObject;
 import java.util.*;
 
 import compute.ServerInterface;
@@ -270,12 +269,7 @@ public class Server extends Thread implements ServerInterface
 		this.otherServers = otherServersPorts;
 		this.myPort = yourPort;
 	}
-    
-	public int getPort() throws RemoteException{
-		
-		return this.myPort;
-	}
-	
+
 	private void sendAck(UUID messageId, int destination, AckType type)
 	{
 		try{

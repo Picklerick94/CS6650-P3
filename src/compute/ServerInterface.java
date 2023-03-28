@@ -2,15 +2,57 @@ package compute;
 
 import java.rmi.Remote;
 import java.rmi.RemoteException;
-import java.util.*;
 import server.AckType;
+import java.util.*;
 
-public interface ServerInterface extends Remote 
-{
-    public String KeyValue(UUID messageId, String functionality,String key,String value) throws RemoteException;
-    public void ackMe(UUID messageId, int callBackServer, AckType type) throws RemoteException;
-    public void go(UUID messageId,  int callBackServer) throws RemoteException;
-    public void prepareKeyValue(UUID messageId, String functionality,String key,String value, int callBackServer) throws RemoteException;
-    public void setServersInfo(int[] OtherServersPorts, int yourPorts ) throws RemoteException;
-    public int getPort() throws RemoteException;
+/**
+ * Interface for Server class
+ */
+public interface ServerInterface extends Remote {
+    /**
+     * Process client requests and return GET/PUT/DELETE values accordingly
+     * @param msgID Unique id of the message from Client class
+     * @param requestType request type from Client class
+     * @param key key sent from Client class
+     * @param value value sent from Client class
+     * @return GET/PUT/DELETE values accordingly
+     * @throws RemoteException exceptions occur during the execution of a rpc
+     */
+    String KeyValue(UUID msgID, String requestType, String key, String value) throws RemoteException;
+
+    /**
+     *
+     * @param msgID Unique id of the message from Client class
+     * @param requestType request type from Client class
+     * @param key key sent from Client class
+     * @param value value sent from Client class
+     * @param currServer current port running
+     * @throws RemoteException exceptions occur during the execution of a rpc
+     */
+    void prepareKeyValue(UUID msgID, String requestType, String key, String value, int currServer) throws RemoteException;
+
+    /**
+     *
+     * @param OtherServersPorts replica servers
+     * @param currServer current port running
+     * @throws RemoteException exceptions occur during the execution of a rpc
+     */
+    void setServersInfo(int[] OtherServersPorts, int currServer) throws RemoteException;
+
+    /**
+     *
+     * @param msgId Unique id of the message from Client class
+     * @param currServer current port running
+     * @param type acknowledgement type
+     * @throws RemoteException exceptions occur during the execution of a rpc
+     */
+    void ackMe(UUID msgId, int currServer, AckType type) throws RemoteException;
+
+    /**
+     *
+     * @param msgId Unique id of the message from Client class
+     * @param currServer current port running
+     * @throws RemoteException exceptions occur during the execution of a rpc
+     */
+    void go(UUID msgId, int currServer) throws RemoteException;
 }
