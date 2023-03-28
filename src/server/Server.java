@@ -6,304 +6,342 @@ import java.rmi.registry.Registry;
 import java.util.*;
 
 import compute.ServerInterface;
-	
 
-public class Server extends Thread implements ServerInterface 
-{
-	static ServerHelper hl = new ServerHelper();
+/**
+ * Multi-threaded server class to handle multiple outstanding client requests at once.
+ * This class is able to handle requests from multiple running instances of
+ * client doing concurrent PUT, GET, and DELETE operations.
+ * It is also able to sync the updates to all replica servers.
+ */
+public class Server extends Thread implements ServerInterface {
+	/**
+	 * This class store the request type and
+	 * key value from Client
+	 */
+	class Value {
+		String requestType;
+		String key;
+		String value;
+	}
+
+	/**
+	 * This class identifies whether the message
+	 * is two-phase committed
+	 */
+	class Ack {
+		public boolean isAcked;
+	}
+
+	static ServerHelper serverHelper = new ServerHelper();
 	private int[] otherServers = new int[4];
-	private  int myPort;
-	private  Map<UUID, Value> pendingChanges = Collections.synchronizedMap(new HashMap<UUID, Value>());
-	private  Map<UUID,Map<Integer,Ack>> pendingPrepareAcks = Collections.synchronizedMap(new HashMap<UUID,Map<Integer,Ack>>());
-	private  Map<UUID,Map<Integer,Ack>> pendingGoAcks = Collections.synchronizedMap(new HashMap<UUID,Map<Integer,Ack>>());
+	private  int currPort;
+	private  Map<UUID, Value> pendingChanges = Collections.synchronizedMap(new HashMap<>());
+	private  Map<UUID,Map<Integer,Ack>> pendingPrepareAcks = Collections.synchronizedMap(new HashMap<>());
+	private  Map<UUID,Map<Integer,Ack>> pendingGoAcks = Collections.synchronizedMap(new HashMap<>());
 	ReadWriteLock rwl=new ReadWriteLock();
-	
-	public String KeyValue(String functionality,String key,String value) 
-		{    
-			String message="";	
-			String fileName = "keyValueStore_" + myPort + ".txt";
-			KeyList k1=new KeyList(fileName);
-			try {	
-			if (functionality.equalsIgnoreCase("GET")) 
-					{
-						hl.log("Looking for key: "
-						+ key
-						+ " - from client: ");
-						rwl.lockRead();
-					message += key + " : "
-									+ k1.isInStore(key);
-						rwl.unlockRead();
-				} else if (functionality.equalsIgnoreCase("PUT"))
-						{
-							hl.log("Writing the key: "
-										+ key
-										+ " and value: "
-										+ value
-										+ " - from client: ");
-							rwl.lockWrite();
-							message += key + " : "
-										+ k1.putInStore(key, value);
-							rwl.unlockWrite();
-							} else 
-								{
-								hl.log("Deleting "+key);
-								rwl.lockWrite();
-									message += key + " : "
-											+ k1.deleteKeyValue(key);
-										rwl.unlockWrite();
-								}																		
-					}			
-					catch (Exception e) 
-					{
-						hl.log(e.getMessage());
-					}
-					return(message + "\n");
+
+	/**
+	 * Records the current server and other replica servers
+	 * @param otherServersPorts replica servers
+	 * @param currPort current server
+	 * @throws RemoteException exceptions occur during the execution of a rpc
+	 */
+	public void setServersInfo(int[] otherServersPorts, int currPort) throws RemoteException {
+		this.otherServers = otherServersPorts;
+		this.currPort = currPort;
+	}
+
+	/**
+	 * Use lock to update key value store for replica servers
+	 * @param requestType request type from client
+	 * @param key key from client
+	 * @param value value from client
+	 * @return status of the update operations
+	 */
+	public String KeyValue(String requestType, String key, String value) {
+		String message= "";
+		String fileName = "keyValueStore_" + currPort + ".txt";
+		ReadWriteFile k1 = new ReadWriteFile(fileName);
+
+		try {
+			if (requestType.equalsIgnoreCase("GET")) {
+				serverHelper.log("GET key: " + key + " - from client: ");
+				rwl.lockRead();
+				message += key + " : " + k1.getKvStore(key);
+				rwl.unlockRead();
+			} else if (requestType.equalsIgnoreCase("PUT")) {
+				serverHelper.log("Writing the key: " + key + " and value: " + value + " - from client: ");
+				rwl.lockWrite();
+				message += key + " : " + k1.putInStore(key, value);
+				rwl.unlockWrite();
+			} else {
+				serverHelper.log("Deleting "+key);
+				rwl.lockWrite();
+				message += key + " : " + k1.deleteKeyValue(key);
+				rwl.unlockWrite();
 			}
-	
-	public String KeyValue(UUID messageId, String functionality, String key,
-			String value) throws RemoteException 
-		{
-		if (functionality.equalsIgnoreCase("GET"))
-		{
-			return KeyValue(functionality, key, value);
+		} catch (Exception e) {
+			serverHelper.log(e.getMessage());
 		}
-		addToTempStorage(messageId,  functionality,  key, value);
-		tellToPrepare(messageId, functionality, key, value);
-		boolean prepareSucc = waitAckPrepare(messageId, functionality, key, value);
-		if (!prepareSucc)
-		{
-			return "fail";
-		}
-		
-		tellToGo(messageId);
-		boolean goSucc = waitToAckGo(messageId);
-		if (!goSucc)
-		{
-			return "fail";
-		}
-		
-		Value v = this.pendingChanges.get(messageId);
-		
-		if ( v == null)
-		{
-			throw new IllegalArgumentException("The message is not in the storage");
-		}
-		
-		String message = this.KeyValue(v.function, v.key, v.value);
-		this.pendingChanges.remove(messageId);
+
 		return message;
 	}
 
-	private boolean waitToAckGo(UUID messageId) {
+	/**
+	 * Prepare the request sent with two-phase commit protocol
+	 * @param msgId Unique message id from Client
+	 * @param requestType request type from Client
+	 * @param key key sent from Client class
+	 * @param value value sent from Client class
+	 * @return final status of the requests operations
+	 * @throws RemoteException status of the update operations
+	 */
+	@Override
+	public String KeyValue(UUID msgId, String requestType, String key, String value) throws RemoteException {
+		if (requestType.equalsIgnoreCase("GET")) return KeyValue(requestType, key, value);
 
-		int areAllAck = 0;
+		addToTempStorage(msgId, requestType, key, value);
+
+		tellToPrepare(msgId, requestType, key, value);
+		boolean prepareSucceed = waitAckPrepare(msgId, requestType, key, value);
+		if (!prepareSucceed) return "PREPARE FAILED";
+		
+		tellToGo(msgId);
+		boolean goSucceed = waitToAckGo(msgId);
+		if (!goSucceed) return "PREPARE FAILED";
+		
+		Value store = this.pendingChanges.get(msgId);
+		
+		if (store == null) throw new IllegalArgumentException("Store not found");
+		
+		String message = this.KeyValue(store.requestType, store.key, store.value);
+		this.pendingChanges.remove(msgId);
+
+		return message;
+	}
+
+	/**
+	 * Prepare to commit message via go for two-phase commit protocol
+	 * @param msgId Unique message id
+	 * @return whether preparation succeeded
+	 */
+	private boolean waitToAckGo(UUID msgId) {
+		int totalAck;
 		int retry = 3;
 		
-		while (retry != 0)
-		{
+		while (retry != 0) {
 			try{
 			  Thread.sleep(100);
-			}catch(Exception ex)
-			{
-				hl.log("wait fail.");
+			} catch(Exception ex) {
+				serverHelper.log("Lock wait failed");
 			}
-			
-			areAllAck = 0;
+
+			totalAck = 0;
 			retry--;
-			Map<Integer,Ack> map = this.pendingGoAcks.get(messageId);
+			Map<Integer,Ack> map = this.pendingGoAcks.get(msgId);
 			
-			for (int server : this.otherServers)
-			{
-				if (map.get(server).isAcked)
-				{
-					areAllAck++;
-				}
-				else
-				{
-					callGo(messageId, server);
-				}
+			for (int server : this.otherServers) {
+				if (map.get(server).isAcked) totalAck++;
+				else callGo(msgId, server);
 			}
-			if (areAllAck == 4)
-			{
-				return true;
-			}
+
+			if (totalAck == 4) return true;
 		}
 		
 		return false;
 	}
 
-	private boolean waitAckPrepare(UUID messageId, String functionality, String key, String value) {
-		
-		int areAllAck = 0;
+	/**
+	 * Prepare to attach acknowledgements to messages for two-phase commit protocol
+	 * @param msgId Unique message id
+	 * @param requestType request from Client
+	 * @param key key from Client
+	 * @param value value from Client
+	 * @return whether preparation succeeded
+	 */
+	private boolean waitAckPrepare(UUID msgId, String requestType, String key, String value) {
+		int totalAck;
 		int retry = 3;
 		
-		while (retry != 0)
-		{
-			try{
+		while (retry != 0) {
+			try {
 			  Thread.sleep(100);
-			}catch(Exception ex)
-			{
-				hl.log("wait fail.");
+			} catch (Exception ex) {
+				serverHelper.log("Lock wait failed");
 			}
-			areAllAck = 0;
+
+			totalAck = 0;
 			retry--;
-			Map<Integer,Ack> map = this.pendingPrepareAcks.get(messageId);
-			for (int server : this.otherServers)
-			{
-				if (map.get(server).isAcked)
-				{
-					areAllAck++;
-				}
-				else
-				{
-					callPrepare(messageId, functionality, key, value, server);
-				}
+			Map<Integer,Ack> map = this.pendingPrepareAcks.get(msgId);
+
+			for (int server : this.otherServers) {
+				if (map.get(server).isAcked) totalAck++;
+				else callPrepare(msgId, requestType, key, value, server);
 			}
 			
-			if (areAllAck == 4)
-			{
-				return true;
-			}
+			if (totalAck == 4) return true;
 		}
 		
 		return false;
 	}
 
-	private void tellToPrepare(UUID messageId, String functionality, String key,
-			String value) {
+	/**
+	 * Add new messages to attach acknowledgement
+	 * @param msgId Unique message id
+	 * @param requestType request from Client
+	 * @param key key from Client
+	 * @param value value from Client
+	 */
+	private void tellToPrepare(UUID msgId, String requestType, String key, String value) {
+		this.pendingPrepareAcks.put(msgId, Collections.synchronizedMap(new HashMap<>()));
 		
-		this.pendingPrepareAcks.put(messageId, Collections.synchronizedMap(new HashMap<Integer,Ack>()));
-		
-		for (int server : this.otherServers)
-		{
-			callPrepare(messageId, functionality, key, value, server);
+		for (int server : this.otherServers) {
+			callPrepare(msgId, requestType, key, value, server);
 		}
 		
-	}
-    
-	private void tellToGo(UUID mesUuid)
-	{
-		this.pendingGoAcks.put(mesUuid, Collections.synchronizedMap(new HashMap<Integer, Ack>()));
-		
-		for (int server : this.otherServers)
-		{
-			callGo(mesUuid, server);
-		}
-	}
-	
-	private void callGo(UUID messageId, int server)
-	{
-		try{
-			Ack a = new Ack();
-			a.isAcked = false;
-			this.pendingGoAcks.get(messageId).put(server, a);
-			 Registry registry = LocateRegistry.getRegistry(server);
-		     ServerInterface stub = (ServerInterface) registry.lookup("compute.ServerInterface");
-		    stub.go(messageId, myPort);
-		}catch(Exception ex)
-		{
-			hl.log("Something went wrong in sending go, removing data from temporary storage");
-		}
-		
-		hl.log("call go for worked. target: " + server);
-	}
-	
-	private void callPrepare(UUID messageId, String functionality, String key,String value, int server)
-	{
-		try{
-			Ack a = new Ack();
-			a.isAcked = false;
-			this.pendingPrepareAcks.get(messageId).put(server, a);
-			 Registry registry = LocateRegistry.getRegistry(server);
-		     ServerInterface stub = (ServerInterface) registry.lookup("compute.ServerInterface");
-		    stub.prepareKeyValue(messageId, functionality, key, value, myPort);
-		}catch(Exception ex)
-		{
-			hl.log("Something went wrong in sending Ack, removing data from temporary storage");
-		}
-		
-		hl.log("call prepare for worked. target: " + server);
 	}
 
-	public void ackMe(UUID messageId, int yourPort, AckType type) throws RemoteException{
+	/**
+	 * Add new messages to go
+	 * @param msgId Unique message id
+	 */
+	private void tellToGo(UUID msgId) {
+		this.pendingGoAcks.put(msgId, Collections.synchronizedMap(new HashMap<>()));
+		
+		for (int server : this.otherServers){
+			callGo(msgId, server);
+		}
+	}
 
-         if (type == AckType.ackGo)
-         {
-        	 this.pendingGoAcks.get(messageId).get(yourPort).isAcked = true ;
-         } else if (type == AckType.AkcPrepare)
-         {
-        	 this.pendingPrepareAcks.get(messageId).get(yourPort).isAcked = true;
+	/**
+	 * Add messages to update queue for go message
+	 * @param msgId unique message if
+	 * @param server replica server
+	 */
+	private void callGo(UUID msgId, int server) {
+		try {
+			Ack a = new Ack();
+			a.isAcked = false;
+			this.pendingGoAcks.get(msgId).put(server, a);
+
+			Registry registry = LocateRegistry.getRegistry(server);
+			ServerInterface stub = (ServerInterface) registry.lookup("compute.ServerInterface");
+		    stub.go(msgId, currPort);
+		} catch (Exception ex) {
+			serverHelper.log("Commit via go failed, remove data from temporary storage");
+			this.pendingGoAcks.remove(msgId);
+		}
+
+		serverHelper.log("Commit via go succeeded. Target: " + server);
+	}
+
+	/**
+	 * Add messages to update queue for attaching ack
+	 * @param msgId unique message id
+	 * @param requestType request type from client
+	 * @param key key from client
+	 * @param value value from client
+	 * @param server replica server
+	 */
+	private void callPrepare(UUID msgId, String requestType, String key, String value, int server) {
+		try {
+			Ack a = new Ack();
+			a.isAcked = false;
+			this.pendingPrepareAcks.get(msgId).put(server, a);
+
+			Registry registry = LocateRegistry.getRegistry(server);
+			ServerInterface stub = (ServerInterface) registry.lookup("compute.ServerInterface");
+		    stub.prepareKeyValue(msgId, requestType, key, value, currPort);
+		} catch (Exception ex) {
+			serverHelper.log("Attach ack failed, remove data from temporary storage");
+			this.pendingPrepareAcks.remove(msgId);
+		}
+
+		serverHelper.log("Call prepare succeeded. Target: " + server);
+	}
+
+	/**
+	 * Process messages in the queue through two-phase commit protocol
+	 * @param msgId Unique id of the message from Client class
+	 * @param currPort current port running
+	 * @param type acknowledgement type
+	 * @throws RemoteException exceptions occur during the execution of a rpc
+	 */
+	public void ackMe(UUID msgId, int currPort, AckType type) throws RemoteException{
+		if (type == AckType.ackGo) {
+        	 this.pendingGoAcks.get(msgId).get(currPort).isAcked = true;
+         } else if (type == AckType.AkcPrepare) {
+        	 this.pendingPrepareAcks.get(msgId).get(currPort).isAcked = true;
          }
-         hl.log("Ack received from: " + yourPort);
-	}
-	
-	public void go(UUID messageId, int callBackServer) throws RemoteException{
-		
-		Value v = this.pendingChanges.get(messageId);
-		
-		if ( v == null)
-		{
-			throw new IllegalArgumentException("The message is not in the storage");
-		}
-		
-		this.KeyValue(v.function, v.key, v.value);
-		this.pendingChanges.remove(messageId);
-		this.sendAck(messageId, callBackServer, AckType.ackGo);
-	}
-	
-	public void prepareKeyValue(UUID messageId, String functionality, String key,
-			String value, int callBackServer) throws RemoteException{
-		
-		if (this.pendingChanges.containsKey(messageId)){
-			
-			sendAck(messageId, callBackServer, AckType.AkcPrepare);
-		}
-		
-		this.addToTempStorage(messageId, functionality, key, value);
-		sendAck(messageId, callBackServer, AckType.AkcPrepare);
+
+		serverHelper.log("Ack received from: " + currPort);
 	}
 
-	public void setServersInfo(int[] otherServersPorts, int yourPort)
-			throws RemoteException {
+	/**
+	 * Send message for commit via go
+	 * @param msgId Unique id of the message from Client class
+	 * @param currServer current port running
+	 * @throws RemoteException exceptions occur during the execution of a rpc
+	 */
+	public void go(UUID msgId, int currServer) throws RemoteException {
+		Value v = this.pendingChanges.get(msgId);
 		
-		this.otherServers = otherServersPorts;
-		this.myPort = yourPort;
+		if (v == null) throw new IllegalArgumentException("Message not found");
+		
+		this.KeyValue(v.requestType, v.key, v.value);
+		this.pendingChanges.remove(msgId);
+		this.sendAck(msgId, currServer, AckType.ackGo);
 	}
 
-	private void sendAck(UUID messageId, int destination, AckType type)
-	{
-		try{
-			 Registry registry = LocateRegistry.getRegistry(destination);
+	/**
+	 * Add messages to be updated to update queue
+	 * @param msgId Unique id of the message from Client class
+	 * @param requestType request type from Client class
+	 * @param key key sent from Client class
+	 * @param value value sent from Client class
+	 * @param currServer current port running
+	 * @throws RemoteException exceptions occur during the execution of a rpc
+	 */
+	public void prepareKeyValue(UUID msgId, String requestType, String key, String value, int currServer) throws RemoteException{
+		if (this.pendingChanges.containsKey(msgId)) sendAck(msgId, currServer, AckType.AkcPrepare);
+		
+		this.addToTempStorage(msgId, requestType, key, value);
+		sendAck(msgId, currServer, AckType.AkcPrepare);
+	}
+
+	/**
+	 * Commit current port and sync with replica servers
+	 * @param msgId Unique id of the message from Client class
+	 * @param server replica server
+	 * @param type AckGo or AckPrepare
+	 */
+	private void sendAck(UUID msgId, int server, AckType type) {
+		try {
+			Registry registry = LocateRegistry.getRegistry(server);
 		    ServerInterface stub = (ServerInterface) registry.lookup("compute.ServerInterface");
 		    
-		    stub.ackMe(messageId, myPort, type);
-		    
-		}catch(Exception ex)
-		{
-			hl.log("Something went wrong in sending Ack, removing data from temporary storage");
-			this.pendingChanges.remove(messageId);
+		    stub.ackMe(msgId, currPort, type);
+		} catch(Exception ex) {
+			serverHelper.log("Attach ack failed, remove data from temporary storage");
+			this.pendingChanges.remove(msgId);
 		}
 	}
-    
-	private void addToTempStorage(UUID messageId, String functionality,
-			String key, String value) {
+
+	/**
+	 * Add temporary storage to the queue for udpates
+	 * @param msgId Unique id of the message from Client class
+	 * @param requestType request type from Client class
+	 * @param key key sent from Client class
+	 * @param value value sent from Client class
+	 */
+	private void addToTempStorage(UUID msgId, String requestType, String key, String value) {
 		Value v = new Value();
-		v.function = functionality;
+		v.requestType = requestType;
 		v.key = key;
 		v.value = value;
-	
-		this.pendingChanges.put(messageId, v);
+
+		this.pendingChanges.put(msgId, v);
 	}
 }
 
-class Value 
-{
-	String function; 
-	String key;
-	String value;
-}
 
-class Ack
-{
-   public boolean isAcked;
-}
