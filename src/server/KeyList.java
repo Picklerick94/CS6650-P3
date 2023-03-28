@@ -7,19 +7,14 @@ import java.io.FileInputStream;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.rmi.registry.LocateRegistry;
-import java.rmi.registry.Registry;
-import java.rmi.server.UnicastRemoteObject;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Properties;
 
-import compute.ServerInterface;
-
 public class KeyList {
 
-	private Helper hl = new Helper();
+	private ServerHelper hl = new ServerHelper();
 	private String fileName;
 
 	public KeyList(String fileName)

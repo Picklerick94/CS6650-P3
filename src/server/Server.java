@@ -10,7 +10,7 @@ import compute.ServerInterface;
 
 public class Server extends Thread implements ServerInterface 
 {
-	static Helper hl = new Helper();
+	static ServerHelper hl = new ServerHelper();
 	private int[] otherServers = new int[4];
 	private  int myPort;
 	private  Map<UUID, Value> pendingChanges = Collections.synchronizedMap(new HashMap<UUID, Value>());
