@@ -18,7 +18,7 @@ import java.util.Properties;
 import compute.ServerInterface;
 
 public class KeyList {
-	
+
 	private Helper hl = new Helper();
 	private String fileName;
 
@@ -26,8 +26,8 @@ public class KeyList {
 	{
 		this.fileName = fileName;
 	}
-	
-	public String isInStore(String queryKey) throws IOException 
+
+	public String isInStore(String queryKey) throws IOException
 	{
 		Properties configProperties = new Properties();
 		String file = new File("").getAbsolutePath();
@@ -41,7 +41,7 @@ public class KeyList {
 		return value;
 	}
 
-	public boolean putInStore(String key, String value) throws IOException 
+	public boolean putInStore(String key, String value) throws IOException
 	{
 		boolean result = false;
 		String file = new File("").getAbsolutePath();
@@ -52,23 +52,23 @@ public class KeyList {
 		String line = "";
 		List list = new ArrayList();
 		int count = 0;
-		while ((line = bufferedReader.readLine()) != null) 
+		while ((line = bufferedReader.readLine()) != null)
 		{
-			if (line.contains(key)) 
+			if (line.contains(key))
 			{
 				line += ", " + value;
 				count++;
 			}
 			list.add(line);
 		}
-		if (count == 0) 
+		if (count == 0)
 		{
 			list.add(key + "=" + value);
 		}
 		bufferedReader.close();
 		BufferedWriter bufferedWriter = new BufferedWriter(new FileWriter(file));
 		Iterator iterator = list.iterator();
-		while (iterator.hasNext()) 
+		while (iterator.hasNext())
 		{
 			line = (String) iterator.next();
 			bufferedWriter.write(line);
@@ -76,7 +76,7 @@ public class KeyList {
 		}
 		bufferedWriter.close();
 		String returnValue = isInStore(key);
-		if (returnValue.contains(value)) 
+		if (returnValue.contains(value))
 		{
 			System.out.println("The value is " + returnValue);
 			result = true;
@@ -84,14 +84,14 @@ public class KeyList {
 		return result;
 	}
 
-	public String deleteKeyValue(String key) throws IOException 
+	public String deleteKeyValue(String key) throws IOException
 	{
 		String value = isInStore(key);
 		String message = "";
-		if (value.isEmpty()) 
+		if (value.isEmpty())
 		{
 			message = "Key not found";
-		} else 
+		} else
 		{
 			String file = new File("").getAbsolutePath();
 			file = file + File.pathSeparator + fileName;
@@ -101,9 +101,9 @@ public class KeyList {
 					file));
 			String line = "";
 			List list = new ArrayList();
-			while ((line = bufferedReader.readLine()) != null) 
+			while ((line = bufferedReader.readLine()) != null)
 			{
-				if (!(line.contains(key))) 
+				if (!(line.contains(key)))
 				{
 					list.add(line);
 				}
