@@ -29,7 +29,7 @@ public interface ServerInterface extends Remote {
      * @param currServer current port running
      * @throws RemoteException exceptions occur during the execution of a rpc
      */
-    void prepareKeyValue(UUID msgID, String requestType, String key, String value, int currServer) throws RemoteException;
+    void prepareKV(UUID msgID, String requestType, String key, String value, int currServer) throws RemoteException;
 
     /**
      * Records the current server and other replica servers

@@ -22,11 +22,12 @@ public class ReadWriteFile {
 	 * @return whether PUT succeeded
 	 * @throws IOException exception while accessing txt files
 	 */
-	public boolean putInStore(String key, String value) throws IOException {
+	public boolean putKVstore(String key, String value) throws IOException {
 		boolean res = false;
 
 		String file = new File("").getAbsolutePath();
-		file = file + File.pathSeparator + fileName;
+
+		file = file + "/src/" + fileName;
 		File f = new File(file);
 
 		if (!f.exists()) f.createNewFile();
@@ -48,6 +49,7 @@ public class ReadWriteFile {
 		bufferedReader.close();
 
 		BufferedWriter bufferedWriter = new BufferedWriter(new FileWriter(file));
+
 		Iterator iterator = list.iterator();
 		while (iterator.hasNext()) {
 			line = (String) iterator.next();
@@ -72,7 +74,7 @@ public class ReadWriteFile {
 	public String getKvStore(String key) throws IOException {
 		Properties configProperties = new Properties();
 		String file = new File("").getAbsolutePath();
-		file = file + File.pathSeparator + fileName;
+		file = file + "/src/" + fileName;
 		File f = new File(file);
 
 		if (!f.exists()) f.createNewFile();
@@ -99,15 +101,15 @@ public class ReadWriteFile {
 			message = "Key not found";
 		} else {
 			String file = new File("").getAbsolutePath();
-			file = file + File.pathSeparator + fileName;
+			file = file + "/src/" + fileName;
 			File f = new File(file);
 
 			if (!f.exists()) f.createNewFile();
 
-			BufferedReader bufferedReader = new BufferedReader(new FileReader(
-					file));
+			BufferedReader bufferedReader = new BufferedReader(new FileReader(file));
 			String line;
 			List list = new ArrayList();
+
 			while ((line = bufferedReader.readLine()) != null) {
 				if (!(line.contains(key))) {
 					list.add(line);

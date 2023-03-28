@@ -1,0 +1,10 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="CS6650-P3:jar">
+    <output-path>$PROJECT_DIR$/classes/artifacts/CS6650_P3_jar</output-path>
+    <root id="archive" name="CS6650-P3.jar">
+      <element id="module-output" name="CS6650-P3" />
+      <element id="extracted-dir" path="$USER_HOME$/Downloads/apache-log4j-2.20.0-bin/log4j-api-2.20.0.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$USER_HOME$/Downloads/apache-log4j-2.20.0-bin/log4j-core-2.20.0.jar" path-in-jar="/" />
+    </root>
+  </artifact>
+</component>

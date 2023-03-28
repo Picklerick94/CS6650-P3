@@ -61,23 +61,23 @@ public class Server extends Thread implements ServerInterface {
 	public String KeyValue(String requestType, String key, String value) {
 		String message= "";
 		String fileName = "keyValueStore_" + currPort + ".txt";
-		ReadWriteFile k1 = new ReadWriteFile(fileName);
+		ReadWriteFile rwFile = new ReadWriteFile(fileName);
 
 		try {
 			if (requestType.equalsIgnoreCase("GET")) {
 				serverHelper.log("GET key: " + key + " - from client: ");
 				rwl.lockRead();
-				message += key + " : " + k1.getKvStore(key);
+				message += key + " : " + rwFile.getKvStore(key);
 				rwl.unlockRead();
 			} else if (requestType.equalsIgnoreCase("PUT")) {
 				serverHelper.log("Writing the key: " + key + " and value: " + value + " - from client: ");
 				rwl.lockWrite();
-				message += key + " : " + k1.putInStore(key, value);
+				message += key + " : " + rwFile.putKVstore(key, value);
 				rwl.unlockWrite();
 			} else {
 				serverHelper.log("Deleting "+key);
 				rwl.lockWrite();
-				message += key + " : " + k1.deleteKeyValue(key);
+				message += key + " : " + rwFile.deleteKeyValue(key);
 				rwl.unlockWrite();
 			}
 		} catch (Exception e) {
@@ -251,7 +251,7 @@ public class Server extends Thread implements ServerInterface {
 
 			Registry registry = LocateRegistry.getRegistry(server);
 			ServerInterface stub = (ServerInterface) registry.lookup("compute.ServerInterface");
-		    stub.prepareKeyValue(msgId, requestType, key, value, currPort);
+		    stub.prepareKV(msgId, requestType, key, value, currPort);
 		} catch (Exception ex) {
 			serverHelper.log("Attach ack failed, remove data from temporary storage");
 			this.pendingPrepareAcks.remove(msgId);
@@ -302,7 +302,7 @@ public class Server extends Thread implements ServerInterface {
 	 * @param currServer current port running
 	 * @throws RemoteException exceptions occur during the execution of a rpc
 	 */
-	public void prepareKeyValue(UUID msgId, String requestType, String key, String value, int currServer) throws RemoteException{
+	public void prepareKV(UUID msgId, String requestType, String key, String value, int currServer) throws RemoteException{
 		if (this.pendingChanges.containsKey(msgId)) sendAck(msgId, currServer, AckType.AkcPrepare);
 		
 		this.addToTempStorage(msgId, requestType, key, value);
